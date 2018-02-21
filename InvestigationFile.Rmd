@@ -1,0 +1,499 @@
+---
+title: "Investigation Into Drug Use"
+author: "Hitesh Kumar"
+date: "8 November 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libraries
+```{r}
+library(ggplot2)
+library(caret)
+
+library(xgboost)
+# You may wish to install the latest version here, just in case: ################
+# install.packages("drat", repos="https://cran.rstudio.com")
+# drat:::addRepo("dmlc")
+# install.packages("xgboost", repos="http://dmlc.ml/drat/", type = "source")
+#################################################################################
+
+library(randomForest)
+library(nnet)
+```
+
+### Data
+```{r}
+load("~/Desktop/DataSciCW1/druguse.Rdata")
+```
+
+
+## Histograms for country and gender vs count (filled with high vs low use)
+```{r}
+plot1 = ggplot(druguse, aes(x = country, fill = UseLevel)) + geom_bar() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "Country", y = "Number of people", fill = "level of use")
+plot2 = ggplot(druguse, aes(x = gender, fill = UseLevel)) + geom_bar() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "Gender", y = "Number of people", fill = "level of use")
+print(plot1)
+```
+
+The first bar chart shows the number of responses we have per country surveyed from, as well as what proportion of those are high-level users vs low-level users. 
+
+```{r}
+print(plot2)
+```
+
+The second chart shows responses by gender, again with the proportions of high to low-level users.
+
+### Exploratory Data Analysis
+Finally we get to do something fun, so here we explore some more interesting relations between certain predictors and the level of use (of drugs in general) along with the "Severity".
+
+First we could examine what proportions of those who took cannabis recently (0 being never, 6 being within the last day) are also marked as having a high level of use of drugs overall. This could show us perhaps whether cannabis may act as a "gateway drug" into harder drugs and so resulting in those individuals having a high level of drug use. 
+
+```{r}
+ggplot(druguse, aes(x = cannabis, fill = UseLevel)) + geom_bar() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "Recency of Cannabis use", y = "Number of people", fill = "level of use") + ggtitle("How recently Cannabis was used with Level of drug use")
+```
+
+We see here that indeed it seems there is a pattern amongst those who used cannabis more recently and those who are marked as having a high level of drug use. To draw a conclusion on this would require more evidence, but as some exploratory analysis, this is my preferred example. 
+
+More examples of interesing analysis include the following:
+Those who have used drugs such as LSD or Heroin with almost any recency have been marked as having a high overall drug use, suggesting the use of other substances as well as suggesting that such drugs were not just taken recently, but also often. Obvious from a social or political point of view, but now somewhat supported by data!
+
+```{r}
+ggplot(druguse, aes(x = LSD, fill = UseLevel)) + geom_bar() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "Recency of LSD use", y = "Number of people", fill = "level of use") + ggtitle("How recently LSD was used with Level of drug use")
+
+ggplot(druguse, aes(x = heroin, fill = UseLevel)) + geom_bar() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "Recency of Heroin use", y = "Number of people", fill = "level of use") + ggtitle("How recently Heroin was used with Level of drug use")
+```
+
+Additionally, there is weak evidence for a higher severity of of drug use amongst those who are less conscientious and more open to new experiences, perhaps indicating that being open to trying new types of drugs as well as not being particularly conscientious results in the individual having a higher severity of drug use. 
+
+```{r}
+ggplot(druguse, aes(x = opentoexperience, y = conscientiousness, color = severity)) + geom_point() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "openess to experience", y = "conscientiousness", fill = "level of use") + ggtitle("Openess to experience against concientiousness, with severity as color")
+```
+
+We see a similar weak indication from an individuals level of neuroticism and their agreeableness
+
+```{r}
+ggplot(druguse, aes(x = neuroticism, y = agreeableness, color = severity)) + geom_point() + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "level of neuroticism", y = "agreeableness", fill = "level of use") + ggtitle("neuroticism against agreeableness, with severity as color")
+```
+
+Many other plots were created but are not shown here, and so now we have a better idea of which predictors may be more important than others.
+
+### Using Logistic Regression via GLM
+
+First we have to separate our data into Training and test data, and so pull out and rename the relevant collumns:
+
+```{r}
+# Training data
+drugTrain = data.frame(druguse[1:1500, 1:16], druguse[1:1500, "UseLevel"])
+colnames(drugTrain)[17] = "UseLevel"
+
+# Testing Data
+drugTest = data.frame(druguse[1501:1885, 1:16])
+
+drugModel = glm(drugTrain$UseLevel ~ ., family = binomial(link = "logit"), data = drugTrain)
+
+summary(drugModel)
+```
+from What we can see here, the most statistically significant predictors are: Gender (Male), Country (UK), Opneness to experience, concientiousness, sensation, and use of Nicotine, with the last being the most significant by far. We shall discuss our ideas on this later. 
+
+### Testing on the remaining data
+
+We now use the test data to make predictions using the model we trained, and will convert them to 1 or 0 based on whether they are predicted to have a high drug use level or not.
+
+```{r}
+drugPred = predict(drugModel, newdata = drugTest, type = "response")
+
+# Assigning 1 or 0 based on P(high) > 0.5 or not
+drugPred = ifelse(drugPred > 0.5, 1, 0)
+
+# Creating confusion matrix
+truPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "high") # true positives
+truNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "low")  # true negatives
+falPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "low")  # false positives
+falNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "high") # false negatives
+
+confMat = matrix(c(truPos, falNeg, falPos, truNeg), nrow = 2, ncol = 2)
+rownames(confMat) = c("Pred. T", "Pred. F")
+colnames(confMat) = c("Actual. T", "Actual. F")
+
+confMat
+```
+
+### Accuracy
+
+We now calculate the "accuracy" of our model in the sense of how well it predicts the truth against all its predictions, as well as seeing how the true positive rate changes with the false positive rate, to understand how well (or how badly) our model could perform potentially.
+
+```{r}
+# Accuracy
+acc = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+acc
+```
+
+### 10-Fold Cross validation
+
+Here, we perform 10-Fold cross validation on our data to get a better idea to how our model will react to new data. This involves testing it on 10 subsets of the data and finding the average accuracy of all those. Some may complain that my implementation isn't as good as the inbuilt one, and that may be true, but I much prefer having much greater control over the process and hence use my own code to run 10-Fold cross validation.
+
+```{r}
+# Choosing the correct collumns
+drugCVdata = data.frame(druguse[ , 1:16], druguse[ , 34])
+colnames(drugCVdata)[17] = "UseLevel"
+
+# Creating the 10 folds
+drugCV = createFolds(rownames(drugCVdata), k = 10, list = TRUE)
+
+accList = c(1:10)
+
+# Performing cross validation
+for (i in 1:10) {
+    # Splitting data each time
+    drugCVTrain = drugCVdata[-drugCV[[i]], ]
+    drugCVTest  = drugCVdata[drugCV[[i]],  ]
+    # Fitting and predicting
+    drugCVModel = glm(drugCVTrain$UseLevel ~ ., family = binomial(link = "logit"), data = drugCVTrain)
+    drugCVPred = predict(drugCVModel, newdata = drugCVTest[ , 1:16], type = "response")
+    
+    # Assessing accuracy
+    drugCVPred = ifelse(drugCVPred > 0.5, 1, 0)
+    
+    truPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == "high") # true positives
+    truNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == "low")  # true negatives
+    falPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == "low")  # false positives
+    falNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == "high") # false negatives
+    
+    accList[i] = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+}
+
+# Display average accuracy
+avAcc = sum(accList) / 10
+avAcc
+```
+
+We find that our average accuracy after 10-Fold validation is very similar to our accuracy without using cross-validation, showing that our method works.
+
+### Logistic Regression via Gradient Boosting Tree
+
+Now we use a Gradient boosting tree to make a new model to predict drug use levels. In a nutshell, gradient boosting works by relying on "weak learners" to make predictions and then forcing more "weak learners" to learn from (and make a better prediction on) the cases that the first one got wrong, hence improving on its predecessors mistakes. To learn more please visit: https://machinelearningmastery.com/gentle-introduction-gradient-boosting-algorithm-machine-learning/
+
+Here, in order for the functions to work, we had to convert our data from a data frame into a matrix and then convert our binary output variable into 1's and 0's (1 for high, 0 for low as usual). Aside from that, the rest of the process was the same.
+
+the library used, xgboost should be installed via the commands provided in the comments right at the top of this file, else it may not work.
+
+```{r}
+# Creating training set, and converting to a matrix of purely numeric values (1 = high, 0 = low)
+drugTrain = data.frame(druguse[1:1500, 1:16], druguse[1:1500, 34])
+drugTrain = data.matrix(drugTrain)
+colnames(drugTrain)[17] = "UseLevel"
+drugTrain[ , 17] = ifelse(drugTrain[ , 17] == 1, 0, 1)
+
+# Same as above, but for test set
+drugTest = data.frame(druguse[1501:1885, 1:16], druguse[1501:1885, 34])
+drugTest = data.matrix(drugTest)
+colnames(drugTest)[17] = "UseLevel"
+drugTest[ , 17] = ifelse(drugTest[ , 17] == 1, 0, 1)
+
+# Fitting the Gradient boosting tree model, parameters set for best accuracy
+gradBoost = xgboost(data = drugTrain[ , 1:16], label = drugTrain[ , 17], max_depth = 20, eta = 0.14, nthread = 2, nrounds = 50, objective = "binary:logistic", verbose = 0)
+
+# Making predictions and classifying
+drugPred = predict(gradBoost, drugTest[ , 1:16])
+drugPred = ifelse(drugPred > 0.5, 1, 0)
+```
+
+### Assessing accuracy of our model
+
+We can assess the accuracy of our model as before, by calculating the proportion of correct predicitons to all predictions made by the model. 
+
+```{r}
+# Creating confusion matrix
+truPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "high") # true positives
+truNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "low")  # true negatives
+falPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "low")  # false positives
+falNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "high") # false negatives
+
+confMat = matrix(c(truPos, falNeg, falPos, truNeg), nrow = 2, ncol = 2)
+rownames(confMat) = c("Pred. T", "Pred. F")
+colnames(confMat) = c("Actual. T", "Actual. F")
+
+confMat
+
+# Accuracy
+acc = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+acc
+```
+
+Almost as good as the general linear model, the Gradient boosting tree gives an accuracy of almost 85%, with scope for improvement if the best parameters (i.e depth of trees, learning rate and number of rounds) can be found.
+
+But to assess how it may react to new data, we need another method. As the model is called "gradient boosting tree" one might think we could make use of bootstrapping methods, however neither does a GBT work in quite the same way as descision trees nor does the function to make the model allow us to perform this. Hence as before, we can make use of 10-Fold cross validation to get some idea of how the model behaves with new data. 
+
+```{r}
+# Choosing the correct collumns
+drugCVdata = data.frame(druguse[ , 1:16], druguse[ , 34])
+drugCVdata = data.matrix(drugCVdata)
+colnames(drugCVdata)[17] = "UseLevel"
+drugCVdata[ , 17] = ifelse(drugCVdata[ , 17] == 1, 0, 1)
+
+# Creating the 10 folds
+drugCV = createFolds(rownames(drugCVdata), k = 10, list = TRUE)
+
+accList = c(1:10)
+
+# Performing cross validation
+for (i in 1:10) {
+    # Splitting data each time
+    drugCVTrain = drugCVdata[-drugCV[[i]], ]
+    drugCVTest  = drugCVdata[drugCV[[i]],  ]
+    # Fitting and predicting
+    drugCVModel = xgboost(data = drugCVTrain[ , 1:16], label = drugCVTrain[ , 17], max_depth = 20, eta = 0.14, 
+                                      nthread = 2, nrounds = 50, objective = "binary:logistic", verbose = 0)
+    drugCVPred = predict(drugCVModel, newdata = drugCVTest[ , 1:16], type = "response")
+    
+    # Assessing accuracy
+    drugCVPred = ifelse(drugCVPred > 0.5, 1, 0)
+    
+    truPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 1) # true positives
+    truNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 0)  # true negatives
+    falPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 0)  # false positives
+    falNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 1) # false negatives
+    
+    accList[i] = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+}
+
+# Display average accuracy
+avAcc = sum(accList) / 10
+avAcc
+```
+
+Here we observe that our 10-Fold cross validation results in about 84.5% (+- 0.5%) accuracy meaning the results would be equivalent to a reasonable degree if the model was exposed to new data. 
+
+### Using a random forest to predict heroin usage
+
+In this part we now make use of all the predictor data we have, namely the previous predictors and now in addtion we have the history of use of other drugs available to us. For this, we now have to use a random forest, and so will require new libraries.
+
+```{r}
+# Setting up new training data
+drugTrain = data.frame(druguse[1:1500, 1:30])
+drugTrain[ , 24] = ifelse(drugTrain[ , 24] == 0, "no", "yes")
+drugTrain[ , 24] = as.factor(drugTrain[ , 24])
+
+# Setting up new testing data
+drugTest = data.frame(druguse[1501:1885, 1:30])
+drugTest[ , 24] = ifelse(drugTest[ , 24] == 0, "no", "yes")
+drugTrain[ , 24] = as.factor(drugTrain[ , 24])
+
+# Training Random Forest model and predicting
+drugForest = randomForest(drugTrain$heroin ~ ., data = drugTrain[ , -24], importance = TRUE, ntree = 170)
+drugPred = predict(drugForest, newdata = drugTest[ , -24], type = "class")
+```
+
+Now that we have fit the model and made our predictions, we must assess the accuracy of our model to see how well it performs. Of course, this means finding out how often it predicts the truth against all its predictions.
+
+```{r}
+# Creating confusion matrix
+truPos = sum(drugPred == "yes" & drugTest[ , 24] == "yes") # true positives
+truNeg = sum(drugPred == "no"  & drugTest[ , 24] == "no")  # true negatives
+falPos = sum(drugPred == "yes" & drugTest[ , 24] == "no")  # false positives
+falNeg = sum(drugPred == "no"  & drugTest[ , 24] == "yes") # false negatives
+
+confMat = matrix(c(truPos, falNeg, falPos, truNeg), nrow = 2, ncol = 2)
+rownames(confMat) = c("Pred. T", "Pred. F")
+colnames(confMat) = c("Actual. T", "Actual. F")
+
+confMat
+
+# Accuracy
+acc = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+acc
+
+```
+
+Before we settle the case however, it would be interesting to see if we could find the optimum number of trees for accuracy and speed, and so we should observe how our model performs as it get larger and larger. From some quick initial trials, we can see that just at 20 trees the accuracy is already consistently at 90%, and at 500 Trees it seems to level off at 91.5% or so, and so in between those two values, we can see that it will become very had to see a pattern just from one trial per model due to randomness. This means we should fit each forest multiple times and use it to predict values, find the accuray and then take the average of this accuracy. After all this, we should plot it to see what the results are, and then fit a polynomial curve to it!
+
+```{r}
+accList = c(1:30)
+numTrials = c(1:length(accList))
+
+# Finding average accuracy for each model
+for (i in numTrials) {
+    
+    avAcc = c(1:10)
+    
+    for (j in 1:10) { 
+        # Fitting model for 10*i trees and predicting
+        drugForest = randomForest(drugTrain$heroin ~ ., data = drugTrain[ , -24], importance = TRUE, ntree = 10*i)
+        drugPred = predict(drugForest, newdata = drugTest[ , -24], type = "class")
+        
+        # Assessing accuracy
+        correctPred = sum(drugPred == drugTest[ , 24])
+        avAcc[j] = (correctPred) / 385
+    }
+    
+    accList[i] = sum(avAcc) / 10
+
+}
+
+# Fitting a Quartic curve to our data
+fitCurve = lm(accList ~ poly(numTrials, 4, raw = TRUE))
+
+# PLotting both the data and the curve
+ggplot(data.frame(accList), aes(x = numTrials, y = accList[])) + geom_point() + geom_line(y = predict(fitCurve, data.frame(numTrials))) + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "number of Trees (x10)", y = "Accuracy of Model") + ggtitle("Accuracy of Random Forest model against number of trees in model")
+
+```
+
+After this lengthy and somewhat useless detour, we have come to the conclusion that 170 trees are the best option for getting close to 91% accuracy from our model and also completing the fitting process within a reasonable amount of time!
+
+### Having some fun with the data: Predicting age based on substance use alone
+
+Here, we explore two methods to predict an individuals age based on their use of all substances, i.e from caffiene up to cannabis up to heroin! First up, we have our good old friend, the general linear model for logistic regression. According to Microsofts Data science cheat sheet, Logistic regression is usually the go-to method for a task like this and apparently delivers the best results per computational power required.
+
+As always, we create the data, fit the model and calculate its accuracy. We wont be using cross validation or the like here, to keep it simple. We classify age into two groups, the under 24's and over 24's (basically students and non-students!) (most likely the case at least...) and mark them as 1 or 0.
+
+```{r}
+# Training data
+drugTrain = data.frame(druguse[1:1500, 13:30], druguse[1:1500, 1])
+drugTrain[ , 19] = ifelse(drugTrain[ , 19] == "18-24", 1, 0)
+colnames(drugTrain)[19] = "agegroup"
+
+# Testing Data
+drugTest = data.frame(druguse[1501:1885, 13:30], druguse[1501:1885, 1])
+drugTest[ , 19] = ifelse(drugTest[ , 19] == "18-24", 1, 0)
+colnames(drugTest)[19] = "agegroup"
+```
+
+Now we first try logistic regression:
+
+```{r}
+# Fitting model
+drugGLM = glm(drugTrain$agegroup ~ ., family = binomial(link = "logit"), data = drugTrain)
+drugPred = predict(drugGLM, newdata = drugTest[ , -19], type = "response")
+drugPred = ifelse(drugPred > 0.5, 1, 0)
+
+# Calculating number of correct predictions
+correctPred = sum(drugPred == drugTest[19])
+
+# Accuracy
+acc = correctPred / 385
+acc
+```
+
+We see we get quite good accuracy out of our model, coming in at 81% roughly. This says not only that the GLM is a reasonably good model, but also that people who do have some pattern (yet to identify) of use of substances tend to be younger. To see this pattern, we can check the summary of our model:
+
+```{r}
+summary(drugGLM)
+```
+
+From here we can that there are quite a few VERY strong predictors, such as the use of cannabis and benzodiaz, and harder drugs like crack and ecstasy. Legal highs also comes in quite strongly, but surprsingly, the use of alcohol and heroin (very common and very rare) dont seem to correlate with age! People of all ages seem to drink alchol similarly and also take heroin similarly! However, we should be wary when drawing this conclusion, as we have a relativley small set of data and an even smaller set of data for people of older ages.
+
+Next up, we train our challenger, the neural network! Whilst this isn't the best method for this problem, it may still be interesting to see what we get. Same training and testing data as before and same accuracy calculations:
+
+```{r}
+# Fitting model
+drugNeural = nnet(drugTrain$agegroup ~ ., data = drugTrain, size = 5, maxit = 1000)
+drugPred = predict(drugNeural, drugTest[ , -19], type = "raw")
+drugPred = ifelse(drugPred > 0.5, 1, 0)
+
+# Calculating number of correct predictions
+correctPred = sum(drugPred == drugTest[19])
+
+# Accuracy
+acc = correctPred / 385
+acc
+```
+
+Here we have quite interesting results indeed. In some trials, we can reach as high as 80% accuracy, whereas in some trials where convergence occurs quickly, we get as low as 67% accuracy. Neural networks may not be the best model for this problem, but regardless they can perform decently if trained a few times to see what the maximum accuracy may be. Of course, there is scope for optimization as we will not find be finding the best size and number of maximum iterations to get the best performance against speed out of this.
+
+To have an estimate of the "loss", we assume this means to see what the value of the loss function is. This means to find the mean square error involved. This may seem like a lengthy task, but we realise that it is simply 1 - accuracy! Since we have a binary outcome, the MSE will simply be the wrong predictions / number of total predicitons, which is simply the accuracy of the model subtracted from 1.
+
+```{r}
+# Finding MSE (Loss function)
+1 - acc
+```
+
+To get a better idea of how our model performs, instead of other forms of testing accuracy, we will instead see how the mean square error of predictions for each model changes based on the size of training data. This will give us insight into how much each model can make out of a certain amount of training data, and also how much data is needed for each model to have an MSE low enough to meet whatever requirements may be imposed. Additionally, we can also compare the accuracy of the two models this way.
+
+Here, we train the model on increasing amounts of data, and then calculate the MSE per that set of training data. As there are random processes involved, we repeat the training and predicting process 10 times for each training data size, and find the average of each. 
+
+```{r}
+numTests = 50
+
+mseGLM = rep(0, numTests)
+mseNN = rep(0, numTests)
+
+for (i in 1:numTests) {
+    
+    
+    # Training data
+    drugTrain = data.frame(druguse[1:300 + (1200/numTests)*i, 13:30], druguse[1:300 + (1200/numTests)*i, 1])
+    drugTrain[ , 19] = ifelse(drugTrain[ , 19] == "18-24", 1, 0)
+    colnames(drugTrain)[19] = "agegroup"
+    
+    # Testing Data
+    drugTest = data.frame(druguse[1501:1885, 13:30], druguse[1501:1885, 1])
+    drugTest[ , 19] = ifelse(drugTest[ , 19] == "18-24", 1, 0)
+    colnames(drugTest)[19] = "agegroup"
+    
+    for (j in 1:10) {
+        # Fitting model GLM and predicting
+        drugGLM = glm(drugTrain$agegroup ~ ., family = binomial(link = "logit"), data = drugTrain)
+        drugPred = predict(drugGLM, newdata = drugTest[ , -19], type = "response")
+        drugPred = ifelse(drugPred > 0.5, 1, 0)
+        
+        # Calculating number of correct predictions and MSE
+        correctPred = sum(drugPred == drugTest[19])
+        mseGLM[i] = mseGLM[i] + (1 - (correctPred / 385))
+    
+        # Fitting model NNET and predicting
+        drugNeural = nnet(drugTrain$agegroup ~ ., data = drugTrain, size = 5, maxit = 1000, trace = FALSE)
+        drugPred = predict(drugNeural, drugTest[ , -19], type = "raw")
+        drugPred = ifelse(drugPred > 0.5, 1, 0)
+        
+        # Calculating number of correct predictions
+        correctPred = sum(drugPred == drugTest[19])
+        mseNN[i] = mseNN[i] + (1 - (correctPred / 385))
+    }
+    
+}
+
+mseGLM = mseGLM / 10
+mseNN = mseNN / 10
+mseData = data.frame(mseGLM, mseNN)
+numTestVec = seq(300 + 1200/(numTests), 1500, 1200/(numTests))
+
+ggplot(mseData) +  geom_point(aes(x = numTestVec, y = mseData$mseGLM, color = "GLM")) + geom_point(aes(x = numTestVec, y = mseData$mseNN, color = "NN")) + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "number of training samples", y = "Mean Sqaure Error") + ggtitle("Mean sqaure error of predictions against size of training data")
+```
+
+We see now that there seems to be a constant rate of error for the neural networks overall as training data size increases, whereas for GLM's, the error shows a weak trend of decreasing. Additionally, we se that in almost every case, the GLM is more accurate than the neural network. Not surprising since neural networks are not the best models for tasks such as these.
+
+### What predictors are important?
+
+In predicting substance use, we have a few sources we could use to understand which predictors seem most important. From our EDA, we can see the use of milder drugs such as cannabis may make very good predictors of an individuals level of drug use, showing that almost all individuals that have used cannabis have been marked as having a high level of drug use. Similarly, the use of heroin EVER at any point in an individuals life indicates that the individual will almost certainly have a high level of drug use. This may seem obvious but it also implies that people who use heroin rarely ever use it just once. Other weaker predictors such as a combination of opennes to experience and lack of conscientiousness, as well as a combination of neuroticism and lack of agreeableness both (weakly) predict a high severity of drug use.
+
+If we look at the summary of our GLM's, the p-values make it quite clear what the most significant predictors are for predicting level of drug use. We can see that the most important predictors are:
+Gender - Being a male makes you much more likely to have a high level of substance use than being a female
+Country - Being from the UK surprisingly! This may be due to the fact that there are very few samples from other countries
+Openness to experience - A higher openness to experience would naturall mean the individual is more open to trying drugs and hence having a higher level of use
+Consienctiousness - Clearly those who are more aware of their choices would be reluctant to try substances that are harmful
+sensation - How someone reacts to a drug would definetly affect their level of use
+nicotine - This one is surprising, but we now see that those who smoked more recently are far more likely to have a high level of drug use than non-smokers. This may be due to someones ability to ignore severe health risks or be accustomed to drug use.
+
+-- End of document. --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
