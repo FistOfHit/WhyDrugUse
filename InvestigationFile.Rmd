@@ -14,11 +14,17 @@ knitr::opts_chunk$set(echo = TRUE)
 library(ggplot2)
 library(caret)
 
-library(xgboost)
+gradBoost = FALSE
+if (require(xgboost)) {
+    gradBoost = TRUE
+}
 # You may wish to install the latest version here, just in case: ################
 # install.packages("drat", repos="https://cran.rstudio.com")
 # drat:::addRepo("dmlc")
 # install.packages("xgboost", repos="http://dmlc.ml/drat/", type = "source")
+# 
+# If It does not load, then do not worry, the rest of the document will still be
+# accessible. 
 #################################################################################
 
 library(randomForest)
@@ -27,7 +33,7 @@ library(nnet)
 
 ### Data
 ```{r}
-load("~/Desktop/DataSciCW1/druguse.Rdata")
+load("druguse.Rdata")
 ```
 
 
@@ -181,24 +187,28 @@ Here, in order for the functions to work, we had to convert our data from a data
 the library used, xgboost should be installed via the commands provided in the comments right at the top of this file, else it may not work.
 
 ```{r}
-# Creating training set, and converting to a matrix of purely numeric values (1 = high, 0 = low)
-drugTrain = data.frame(druguse[1:1500, 1:16], druguse[1:1500, 34])
-drugTrain = data.matrix(drugTrain)
-colnames(drugTrain)[17] = "UseLevel"
-drugTrain[ , 17] = ifelse(drugTrain[ , 17] == 1, 0, 1)
-
-# Same as above, but for test set
-drugTest = data.frame(druguse[1501:1885, 1:16], druguse[1501:1885, 34])
-drugTest = data.matrix(drugTest)
-colnames(drugTest)[17] = "UseLevel"
-drugTest[ , 17] = ifelse(drugTest[ , 17] == 1, 0, 1)
-
-# Fitting the Gradient boosting tree model, parameters set for best accuracy
-gradBoost = xgboost(data = drugTrain[ , 1:16], label = drugTrain[ , 17], max_depth = 20, eta = 0.14, nthread = 2, nrounds = 50, objective = "binary:logistic", verbose = 0)
-
-# Making predictions and classifying
-drugPred = predict(gradBoost, drugTest[ , 1:16])
-drugPred = ifelse(drugPred > 0.5, 1, 0)
+if (gradBoost) {
+    # Creating training set, and converting to matrix of numerics (1=high, 0=low)
+    drugTrain = data.frame(druguse[1:1500, 1:16], druguse[1:1500, 34])
+    drugTrain = data.matrix(drugTrain)
+    colnames(drugTrain)[17] = "UseLevel"
+    drugTrain[ , 17] = ifelse(drugTrain[ , 17] == 1, 0, 1)
+    
+    # Same as above, but for test set
+    drugTest = data.frame(druguse[1501:1885, 1:16], druguse[1501:1885, 34])
+    drugTest = data.matrix(drugTest)
+    colnames(drugTest)[17] = "UseLevel"
+    drugTest[ , 17] = ifelse(drugTest[ , 17] == 1, 0, 1)
+    
+    # Fitting the Gradient boosting tree model, parameters set for best accuracy
+    gradBoost = xgboost(data = drugTrain[ , 1:16], label = drugTrain[ , 17], 
+                        max_depth = 20, eta = 0.14, nthread = 2, nrounds = 50, 
+                        objective = "binary:logistic", verbose = 0)
+    
+    # Making predictions and classifying
+    drugPred = predict(gradBoost, drugTest[ , 1:16])
+    drugPred = ifelse(drugPred > 0.5, 1, 0)
+}
 ```
 
 ### Assessing accuracy of our model
@@ -206,21 +216,23 @@ drugPred = ifelse(drugPred > 0.5, 1, 0)
 We can assess the accuracy of our model as before, by calculating the proportion of correct predicitons to all predictions made by the model. 
 
 ```{r}
-# Creating confusion matrix
-truPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "high") # true positives
-truNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "low")  # true negatives
-falPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "low")  # false positives
-falNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "high") # false negatives
-
-confMat = matrix(c(truPos, falNeg, falPos, truNeg), nrow = 2, ncol = 2)
-rownames(confMat) = c("Pred. T", "Pred. F")
-colnames(confMat) = c("Actual. T", "Actual. F")
-
-confMat
-
-# Accuracy
-acc = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
-acc
+if (gradBoost) {
+    # Creating confusion matrix
+    truPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "high") # true positives
+    truNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "low")  # true negatives
+    falPos = sum(drugPred == 1 & druguse[1501:1885, "UseLevel"] == "low")  # false positives
+    falNeg = sum(drugPred == 0 & druguse[1501:1885, "UseLevel"] == "high") # false negatives
+    
+    confMat = matrix(c(truPos, falNeg, falPos, truNeg), nrow = 2, ncol = 2)
+    rownames(confMat) = c("Pred. T", "Pred. F")
+    colnames(confMat) = c("Actual. T", "Actual. F")
+    
+    confMat
+    
+    # Accuracy
+    acc = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+    acc
+}
 ```
 
 Almost as good as the general linear model, the Gradient boosting tree gives an accuracy of almost 85%, with scope for improvement if the best parameters (i.e depth of trees, learning rate and number of rounds) can be found.
@@ -228,41 +240,43 @@ Almost as good as the general linear model, the Gradient boosting tree gives an 
 But to assess how it may react to new data, we need another method. As the model is called "gradient boosting tree" one might think we could make use of bootstrapping methods, however neither does a GBT work in quite the same way as descision trees nor does the function to make the model allow us to perform this. Hence as before, we can make use of 10-Fold cross validation to get some idea of how the model behaves with new data. 
 
 ```{r}
-# Choosing the correct collumns
-drugCVdata = data.frame(druguse[ , 1:16], druguse[ , 34])
-drugCVdata = data.matrix(drugCVdata)
-colnames(drugCVdata)[17] = "UseLevel"
-drugCVdata[ , 17] = ifelse(drugCVdata[ , 17] == 1, 0, 1)
-
-# Creating the 10 folds
-drugCV = createFolds(rownames(drugCVdata), k = 10, list = TRUE)
-
-accList = c(1:10)
-
-# Performing cross validation
-for (i in 1:10) {
-    # Splitting data each time
-    drugCVTrain = drugCVdata[-drugCV[[i]], ]
-    drugCVTest  = drugCVdata[drugCV[[i]],  ]
-    # Fitting and predicting
-    drugCVModel = xgboost(data = drugCVTrain[ , 1:16], label = drugCVTrain[ , 17], max_depth = 20, eta = 0.14, 
-                                      nthread = 2, nrounds = 50, objective = "binary:logistic", verbose = 0)
-    drugCVPred = predict(drugCVModel, newdata = drugCVTest[ , 1:16], type = "response")
+if (gradBoost) {
+    # Choosing the correct collumns
+    drugCVdata = data.frame(druguse[ , 1:16], druguse[ , 34])
+    drugCVdata = data.matrix(drugCVdata)
+    colnames(drugCVdata)[17] = "UseLevel"
+    drugCVdata[ , 17] = ifelse(drugCVdata[ , 17] == 1, 0, 1)
     
-    # Assessing accuracy
-    drugCVPred = ifelse(drugCVPred > 0.5, 1, 0)
+    # Creating the 10 folds
+    drugCV = createFolds(rownames(drugCVdata), k = 10, list = TRUE)
     
-    truPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 1) # true positives
-    truNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 0)  # true negatives
-    falPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 0)  # false positives
-    falNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 1) # false negatives
+    accList = c(1:10)
     
-    accList[i] = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+    # Performing cross validation
+    for (i in 1:10) {
+        # Splitting data each time
+        drugCVTrain = drugCVdata[-drugCV[[i]], ]
+        drugCVTest  = drugCVdata[drugCV[[i]],  ]
+        # Fitting and predicting
+        drugCVModel = xgboost(data = drugCVTrain[ , 1:16], label = drugCVTrain[ , 17], max_depth = 20, eta = 0.14, 
+                                          nthread = 2, nrounds = 50, objective = "binary:logistic", verbose = 0)
+        drugCVPred = predict(drugCVModel, newdata = drugCVTest[ , 1:16], type = "response")
+        
+        # Assessing accuracy
+        drugCVPred = ifelse(drugCVPred > 0.5, 1, 0)
+        
+        truPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 1) # true positives
+        truNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 0)  # true negatives
+        falPos = sum(drugCVPred == 1 & drugCVTest[ , 17] == 0)  # false positives
+        falNeg = sum(drugCVPred == 0 & drugCVTest[ , 17] == 1) # false negatives
+        
+        accList[i] = (truPos+truNeg) / (truPos+truNeg+falNeg+falPos)
+    }
+    
+    # Display average accuracy
+    avAcc = sum(accList) / 10
+    avAcc
 }
-
-# Display average accuracy
-avAcc = sum(accList) / 10
-avAcc
 ```
 
 Here we observe that our 10-Fold cross validation results in about 84.5% (+- 0.5%) accuracy meaning the results would be equivalent to a reasonable degree if the model was exposed to new data. 
