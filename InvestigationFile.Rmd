@@ -324,35 +324,17 @@ acc
 
 Before we settle the case however, it would be interesting to see if we could find the optimum number of trees for accuracy and speed, and so we should observe how our model performs as it get larger and larger. From some quick initial trials, we can see that just at 20 trees the accuracy is already consistently at 90%, and at 500 Trees it seems to level off at 91.5% or so, and so in between those two values, we can see that it will become very had to see a pattern just from one trial per model due to randomness. This means we should fit each forest multiple times and use it to predict values, find the accuray and then take the average of this accuracy. After all this, we should plot it to see what the results are, and then fit a polynomial curve to it!
 
+```{r echo=FALSE}
+source('OptimalNumTrees.R')
+```
 ```{r}
-accList = c(1:30)
-numTrials = c(1:length(accList))
-
-# Finding average accuracy for each model
-for (i in numTrials) {
-    
-    avAcc = c(1:10)
-    
-    for (j in 1:10) { 
-        # Fitting model for 10*i trees and predicting
-        drugForest = randomForest(drugTrain$heroin ~ ., data = drugTrain[ , -24], importance = TRUE, ntree = 10*i)
-        drugPred = predict(drugForest, newdata = drugTest[ , -24], type = "class")
-        
-        # Assessing accuracy
-        correctPred = sum(drugPred == drugTest[ , 24])
-        avAcc[j] = (correctPred) / 385
-    }
-    
-    accList[i] = sum(avAcc) / 10
-
-}
-
-# Fitting a Quartic curve to our data
-fitCurve = lm(accList ~ poly(numTrials, 4, raw = TRUE))
-
-# PLotting both the data and the curve
-ggplot(data.frame(accList), aes(x = numTrials, y = accList[])) + geom_point() + geom_line(y = predict(fitCurve, data.frame(numTrials))) + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "number of Trees (x10)", y = "Accuracy of Model") + ggtitle("Accuracy of Random Forest model against number of trees in model")
-
+# Plotting both the data and the curve
+ggplot(data.frame(accList), aes(x = numTrials, y = accList[])) + geom_point() +
+    geom_line(y = predict(fitCurve, data.frame(numTrials))) + theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    labs(x = "number of Trees (x10)", y = "Accuracy of Model") + 
+    ggtitle("Accuracy of Random Forest model against number of trees in model")
 ```
 
 After this lengthy and somewhat useless detour, we have come to the conclusion that 170 trees are the best option for getting close to 91% accuracy from our model and also completing the fitting process within a reasonable amount of time!
@@ -428,56 +410,21 @@ To get a better idea of how our model performs, instead of other forms of testin
 
 Here, we train the model on increasing amounts of data, and then calculate the MSE per that set of training data. As there are random processes involved, we repeat the training and predicting process 10 times for each training data size, and find the average of each. 
 
+```{r echo=FALSE}
+source('AccPerNumSamples.R')
+```
 ```{r}
-numTests = 50
-
-mseGLM = rep(0, numTests)
-mseNN = rep(0, numTests)
-
-for (i in 1:numTests) {
-    
-    
-    # Training data
-    drugTrain = data.frame(druguse[1:300 + (1200/numTests)*i, 13:30], druguse[1:300 + (1200/numTests)*i, 1])
-    drugTrain[ , 19] = ifelse(drugTrain[ , 19] == "18-24", 1, 0)
-    colnames(drugTrain)[19] = "agegroup"
-    
-    # Testing Data
-    drugTest = data.frame(druguse[1501:1885, 13:30], druguse[1501:1885, 1])
-    drugTest[ , 19] = ifelse(drugTest[ , 19] == "18-24", 1, 0)
-    colnames(drugTest)[19] = "agegroup"
-    
-    for (j in 1:10) {
-        # Fitting model GLM and predicting
-        drugGLM = glm(drugTrain$agegroup ~ ., family = binomial(link = "logit"), data = drugTrain)
-        drugPred = predict(drugGLM, newdata = drugTest[ , -19], type = "response")
-        drugPred = ifelse(drugPred > 0.5, 1, 0)
-        
-        # Calculating number of correct predictions and MSE
-        correctPred = sum(drugPred == drugTest[19])
-        mseGLM[i] = mseGLM[i] + (1 - (correctPred / 385))
-    
-        # Fitting model NNET and predicting
-        drugNeural = nnet(drugTrain$agegroup ~ ., data = drugTrain, size = 5, maxit = 1000, trace = FALSE)
-        drugPred = predict(drugNeural, drugTest[ , -19], type = "raw")
-        drugPred = ifelse(drugPred > 0.5, 1, 0)
-        
-        # Calculating number of correct predictions
-        correctPred = sum(drugPred == drugTest[19])
-        mseNN[i] = mseNN[i] + (1 - (correctPred / 385))
-    }
-    
-}
-
-mseGLM = mseGLM / 10
-mseNN = mseNN / 10
-mseData = data.frame(mseGLM, mseNN)
-numTestVec = seq(300 + 1200/(numTests), 1500, 1200/(numTests))
-
-ggplot(mseData) +  geom_point(aes(x = numTestVec, y = mseData$mseGLM, color = "GLM")) + geom_point(aes(x = numTestVec, y = mseData$mseNN, color = "NN")) + theme_bw() + theme(panel.border = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + labs(x = "number of training samples", y = "Mean Sqaure Error") + ggtitle("Mean sqaure error of predictions against size of training data")
+ggplot(mseData) + 
+    geom_point(aes(x = numTestVec, y = mseData$mseGLM, color = "GLM")) + 
+    geom_point(aes(x = numTestVec, y = mseData$mseNN, color = "NN")) + 
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+    labs(x = "number of training samples", y = "Mean Sqaure Error") +
+    ggtitle("Mean sqaure error of predictions against size of training data")
 ```
 
-We see now that there seems to be a constant rate of error for the neural networks overall as training data size increases, whereas for GLM's, the error shows a weak trend of decreasing. Additionally, we se that in almost every case, the GLM is more accurate than the neural network. Not surprising since neural networks are not the best models for tasks such as these.
+We see now that there seems to be a constant rate of error for the neural networks overall as training data size increases, whereas for GLM's, the error shows a (very) weak trend of decreasing. Additionally, we see that in almost every case, the GLM is more accurate than the neural network. Not surprising since neural networks are not the best models for tasks such as these.
 
 ### What predictors are important?
 
