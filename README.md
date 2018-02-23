@@ -16,7 +16,7 @@ The entire project is done in R, can be found <a href="https://www.r-project.org
 
 Its best to use RStudio in my opinion as an IDE for R, it simply makes most tasks pretty easy and is the most popular IDE for R to the best of my knowledge. Available <a href="https://www.rstudio.com/">here.</a>
 
-Additionally, you'll need the XGBoost library for some of the investigation, documentation and how to get it in inlcuded in instructions but for clarity, here are the commands to run in R console:
+Additionally, you'll want the XGBoost library for some of the investigation, although the code has been edited to avoid those parts altogether incase it dosent work out well. Documentation and how to get it in inlcuded in instructions but for clarity, here are the commands to run in R console:
 ```r
 - install.packages("drat", repos="https://cran.rstudio.com")
 - drat:::addRepo("dmlc")
@@ -25,7 +25,7 @@ Additionally, you'll need the XGBoost library for some of the investigation, doc
 Strangely, on my system, <strong>XGBoost works in Linux but not in Windows</strong>, perhaps there is something I am not seeing or missing, but do let me know if you know why this is the case.
 
 And to generate the HTML files from the RMD, you'll need the Knitr library, documentation available <a href="https://cran.r-project.org/web/packages/knitr/index.html">here.</a> 
-Now the method I used to make use of the external R files relies on the ```source()``` function. If you really, dont want to use this, then you can achieve the same thing via the ```read_chunk()``` function. If you want to knit the files this way, you may have to make small changes to the two .R files included. Simply add:
+Now the method I used to make use of the external R files relies on the ```source()``` function. If you really dont want to use this, then you can achieve the same thing via the ```read_chunk()``` function. If you want to knit the files this way, you may have to make small changes to the two .R files included. Simply add:
 - ```@knitr OptionalNumTrees ```
 - ```@knitr AccPerNumSamples ``` 
 
