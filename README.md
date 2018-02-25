@@ -31,12 +31,30 @@ Now the method I used to make use of the external R files relies on the ```sourc
 
 to the top of each file respectively. It should be fine to work then, and if not, refer to <a href="http://zevross.com/blog/2014/07/09/making-use-of-external-r-code-in-knitr-and-r-markdown/">this</a> site for information on how to use external .R files with knitr. 
 
-
 ## Usage
+
+### EDA
+
+Running the .Rmd is very simple (atleast in RStudio), simply run whichever parts you want and edit individual chunks of code on the fly, adapting it to your needs. Probably the only thing you shoud be careful with is the dataset, dont touch it...
+
+(images of basic plots here)
+
+First off you have basic EDA. Plotting some graphs and exploring the data is pretty important to discovering basic relationships or finding hints towards the best paths to follow later in the investigation. Here, simply edit the x and y data on the ggplots to whatever variables of fields you think might show something interesting. Perhaps automate this process?
+
+### GLM's and cross-validation
+
+Here, you can test the predictive capabilities of a General Linear Model, and the code assess the accruacy of your predictions, as well as test how your model might react to new data via 10-fold cross-validation. The parameters and specifics of the model are somewhat variable, so try out different ways of using the model. Documentation can be found <a href="https://stat.ethz.ch/R-manual/R-devel/library/stats/html/glm.html">here.</a>
+
+As for the cross-validation, there are built-in functions to handle some of the work the loop does, but here you have more control over how you split the data and use it, so use that to your advantage perhaps to come up with the best test.
+
+### GBT's
+
+Same as above, except now we use gradient boosting trees for a similar type of prediction. 
+
 
 ## Contributing
 
-Feel free to use the results or code for your own investigations, and if you want to make improvements or corrections then don't hesitate to let me know! I'm sure a lot of the Neural networks I used could be more streamlined...
+Feel free to use the results or code for your own investigations, and if you want to make improvements or corrections then don't hesitate to let me know! I'm sure a lot of the Neural networks I used could be used better...
 
 ## Credits
 
